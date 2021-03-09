@@ -1,0 +1,38 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      docker: 19
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - region=${AWS_REGION}
+      - env=${ENVIRONMENT} 
+      - echo ${DOCKER_PASS} | docker login --username ${DOCKER_USER} --password-stdin
+      - $(aws ecr get-login --region $region --no-include-email)
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build . -t $SERVICE -t $ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REPOSITORY:latest
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push $ECR_REPOSITORY
+      - echo Setting up Github connection
+      - git remote set-url origin https://${CI_USERNAME}:${CI_PUSH_TOKEN}@github.com/EXAMPLE.git
+      - git config --global user.email $CI_EMAIL
+      - git config --global user.name $CI_USERNAME
+      - git checkout -B $GIT_BRANCH
+      - echo `pwd`
+      - cd ..
+      - echo `pwd`
+      - echo $DOCKER_IMAGE
+      - sed -i '/'"${DOCKER_IMAGE}"'/s/.*/'"        image: ${DOCKER_IMAGE}:${IMAGE_VERSION}"'/' $FILE
+      - git add .
+      - git commit -m "Updating ${SERVICE} service with version ${IMAGE_VERSION}"
+      - git push origin $GIT_BRANCH
